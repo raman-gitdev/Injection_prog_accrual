@@ -1,0 +1,3 @@
+EM6_Accrual.url=jdbc:postgresql://HOST:PORT/DBNAME
+EM6_Accrual.user=iD
+EM6_Accrual.password=PASS
