@@ -1,0 +1,216 @@
+  private static void Pre_Spec_Procedures(Table csvTable, String mapname, String sheetName) {
+        try {
+            String sql = "SELECT ProcExecute FROM sivmaps WHERE sivprog = ?";
+
+            try (Connection conn = Db.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+
+                String progName = "MAP_CEVA".equals(mapname)
+                        ? mapname + "_" + sheetName
+                        : mapname;
+
+                ps.setString(1, progName);
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return;
+
+                    String glnProcExecute = rs.getString("ProcExecute");
+                    if (glnProcExecute == null || glnProcExecute.trim().isEmpty()) return;
+
+                    glnProcExecute = glnProcExecute.trim();
+
+                    // Load class dynamically
+                    Class<?> clazz = Class.forName("SIVInject.NET." + glnProcExecute);
+                    if (clazz == null) return;
+
+                    // Create instance
+                    Object obj = clazz.getDeclaredConstructor().newInstance();
+
+                    // Get the method ProcessCSVTable (expects Table and mapname)
+                    Method method = clazz.getMethod("ProcessCSVTable", Table.class, String.class);
+
+                    // Invoke method
+                    Object result = method.invoke(obj, csvTable, mapname);
+
+                    if (result != null && result instanceof Table) {
+                        Table processedTable = (Table) result;
+
+                        // Clear original table
+                        csvTable.getRows().clear();
+                        csvTable.getColumns().clear();
+                        // Copy columns
+                        csvTable.getColumns().addAll(processedTable.getColumns());
+                        // Copy rows
+                        for (Map<String, Object> row : processedTable.getRows()) {
+                            csvTable.addRow(new HashMap<>(row)); // clone each row
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private static Table postSpecProcedures(Table dtTransaction,String mapname) {
+
+        try {
+
+            String procExecute = null;
+
+
+            try (Connection conn = Db.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(
+                         "SELECT ProcExecute FROM sivmaps WHERE sivprog = ?"
+                 )) {
+
+                String sivProgKey;
+                if (mapname == null || mapname.trim().isEmpty()) {
+                    sivProgKey = mapname + "_" + CurrentSheetname;
+                } else {
+                    sivProgKey = mapname;
+                }
+
+                ps.setString(1, sivProgKey);
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        procExecute = rs.getString(1);
+                    }
+                }
+            }
+
+            if (procExecute == null || procExecute.trim().isEmpty()) {
+                return dtTransaction; // nothing to execute
+            }
+
+            procExecute = procExecute.toUpperCase();
+
+
+            String className = "SIVInject.NET." + procExecute;
+
+            Class<?> clazz;
+            try {
+                clazz = Class.forName(className);
+            } catch (ClassNotFoundException e) {
+                // Same behavior as .NET: silently return if class not found
+                return dtTransaction;
+            }
+
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+
+
+            Method method = clazz.getMethod(
+                    "ProcessTransactionTable",
+                    Table.class,
+                    String.class
+            );
+
+
+            Object result = method.invoke(instance, dtTransaction, mapname);
+
+            if (result instanceof Table) {
+                dtTransaction = (Table) result;
+            }
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+
+
+        }
+
+        return dtTransaction;
+    }
+
+
+SivFileInfo info = null;
+info.setFileName(res.getString("original_name"));
+                        info.setMappedTo(res.getString("mapped_to"));
+                        info.setFileType(res.getString("FileType"));
+                        info.setFrequency(res.getString("frequency"));
+                        info.setSheetName(res.getString("sheet_name"));
+
+                        Object uid = res.getObject("uid_master");
+                        info.setUidMaster(uid == null ? 0 : res.getInt("uid_master"));
+
+
+                         try{
+                                   DownloadFile(info.getFileName());
+                                }
+                                catch (Exception ex)
+                                {
+
+                                }
+
+
+\ public static Table getXLSDataTable(String xlsFilePath)
+     {
+         Table table = new Table();
+
+         try (Workbook workbook = WorkbookFactory.create(new File(xlsFilePath))) {
+
+             if (SheetCount == 1 && sheetList.isEmpty()) {
+                 List<String> allSheets = new ArrayList<>();
+                 for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                     allSheets.add(workbook.getSheetName(i));
+                 }
+                 applyFixSheetLogic(allSheets);
+             }
+             // -------- MAP_CEVA fix --------
+             if ("MAP_CEVA".equalsIgnoreCase(glc_mapped_to)) {
+                 sheetList.remove("Unbilled");
+             }
+
+             if (currentSheetIndex >= sheetList.size()) {
+                 return table;
+             }
+
+             Sheet sheet = workbook.getSheet(sheetList.get(currentSheetIndex));
+             if (sheet == null) return table;
+
+             CurrentSheetname = sheet.getSheetName();
+             currentSheetIndex++;
+             SheetCount = sheetList.size();
+
+             int maxCols = 300;
+             boolean headerProcessed = false;
+
+             for (Row row : sheet) {
+
+                 // -------- Header row --------
+                 if (!headerProcessed) {
+                     int colCount = Math.min(row.getLastCellNum(), maxCols);
+                     for (int i = 1; i <= colCount; i++) {
+                         table.addColumn("data" + i);
+                     }
+                     headerProcessed = true;
+                     continue; // SKIP header row
+                 }
+
+                 // -------- Data rows --------
+                 Map<String, Object> dataRow = table.newRow();
+
+                 for (int i = 0; i < table.getColumns().size(); i++) {
+                     Cell cell = row.getCell(i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                     dataRow.put(
+                             table.getColumns().get(i),
+                             getCellValue(cell)
+                     );
+                 }
+
+                 table.addRow(dataRow);
+             }
+
+
+         }
+         catch (Exception ex)
+         {
+             ex.printStackTrace();
+         }
+
+
+
+
+         return table;
+     }
